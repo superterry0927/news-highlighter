@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新聞文章劃重點系統</title>
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 React 與 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 引入 Babel 用於在瀏覽器編譯 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* 確保全螢幕無卷軸干擾，並優化觸控體驗 */
+        body { margin: 0; padding: 0; touch-action: manipulation; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // ==========================================
+        // 內建 SVG 圖示元件 (取代 lucide-react)
+        // ==========================================
+        const IconPenTool = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+        );
+        const IconEraser = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
+        );
+        const IconDownload = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        );
+        const IconSettings = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        );
+        const IconLogOut = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+        );
+        const IconPlus = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+        );
+        const IconEdit2 = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+        );
+        const IconTrash2 = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        );
+        const IconCheck = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        );
+        const IconX = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+        );
+        const IconImageIcon = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+        );
+        const IconSave = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        );
+
+        // ==========================================
+        // 預設資料
+        // ==========================================
+        const initialArticles = [
+            {
+                id: 1,
+                title: 'AI 發展新紀元：生成式人工智慧如何改變教育現場',
+                author: '科技特派記者',
+                date: '2026-04-03',
+                content: '在科技快速變遷的今日，生成式人工智慧（Generative AI）已經深入社會的各個角落。教育領域首當其衝，面臨著前所未有的機遇與挑戰。\n\n專家指出，AI 不僅能協助教師快速生成教材，更能為學生提供客製化的學習輔導。然而，這也引發了關於「學術誠信」與「獨立思考能力」的廣泛討論。\n\n部分學校已經開始積極導入 AI 輔助系統，教導學生如何正確且負責地使用這些強大工具。教育部長在昨天的演說中強調：「我們不該害怕科技，而是要學會駕馭科技。未來的競爭力，在於誰能與 AI 合作得更好，而不是誰能背下更多的知識。」\n\n為了適應這樣的變化，傳統的評量方式勢必需要轉型。不再只是單純的選擇題或簡答題，未來的測驗將更注重學生的邏輯推演、批判性思考以及問題解決能力。這場教育革命才剛拉開序幕，而我們每個人都是這場變革的見證者與參與者。'
+            }
+        ];
+
+        // ==========================================
+        // 主要系統組件 App
+        // ==========================================
+        function App() {
+            const [view, setView] = useState('user'); // 'user', 'adminLogin', 'adminDashboard'
+            const [adminPassword, setAdminPassword] = useState('admin888');
+            const [articles, setArticles] = useState(initialArticles);
+            const [currentArticleId, setCurrentArticleId] = useState(1);
+
+            const currentArticle = articles.find(a => a.id === currentArticleId) || articles[0];
+
+            return (
+                <div className="min-h-screen bg-gray-100 text-gray-900 font-sans selection:bg-yellow-200">
+                    {view === 'user' && (
+                        <UserView 
+                            article={currentArticle} 
+                            articles={articles}
+                            onSwitchArticle={setCurrentArticleId}
+                            onAdminClick={() => setView('adminLogin')} 
+                        />
+                    )}
+                    {view === 'adminLogin' && (
+                        <AdminLogin 
+                            correctPassword={adminPassword} 
+                            onSuccess={() => setView('adminDashboard')} 
+                            onCancel={() => setView('user')} 
+                        />
+                    )}
+                    {view === 'adminDashboard' && (
+                        <AdminDashboard 
+                            articles={articles} 
+                            setArticles={setArticles} 
+                            adminPassword={adminPassword}
+                            setAdminPassword={setAdminPassword}
+                            onLogout={() => setView('user')} 
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        // ==========================================
+        // 使用者介面 (報紙與劃重點功能)
+        // ==========================================
+        function UserView({ article, articles, onSwitchArticle, onAdminClick }) {
+            const canvasRef = useRef(null);
+            const ctxRef = useRef(null);
+            const captureRef = useRef(null);
+            
+            const [activeTool, setActiveTool] = useState('highlighter');
+            const [isDrawing, setIsDrawing] = useState(false);
+            const [studentInfo, setStudentInfo] = useState({ classId: '', seatNo: '', name: '' });
+            const [isLocked, setIsLocked] = useState(false);
+            const [lockedImageUrl, setLockedImageUrl] = useState(null);
+            const [isGenerating, setIsGenerating] = useState(false);
+
+            // 取得自訂畫筆游標
+            const getCursorStyle = () => {
+                if (isLocked) return 'default';
+                if (activeTool === 'highlighter') {
+                    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
+                    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 2 29, crosshair`;
+                }
+                if (activeTool === 'eraser') {
+                    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16C2.5 15.5 2.5 14.5 3 14L13 4C13.5 3.5 14.5 3.5 15 4L20 9C20.5 9.5 20.5 10.5 20 11L11 20H20V20Z"></path></svg>`;
+                    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 14 26, crosshair`;
+                }
+                return 'crosshair';
+            };
+
+            // 動態載入 html2canvas
+            const loadHtml2Canvas = async () => {
+                if (window.html2canvas) return window.html2canvas;
+                return new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                    script.onload = () => resolve(window.html2canvas);
+                    script.onerror = () => reject(new Error('Failed to load html2canvas'));
+                    document.head.appendChild(script);
+                });
+            };
+
+            // 初始化 Canvas
+            const initCanvas = useCallback(() => {
+                const canvas = canvasRef.current;
+                if (!canvas || isLocked) return;
+                
+                const parent = canvas.parentElement;
+                const currentData = canvas.toDataURL();
+                
+                canvas.width = parent.clientWidth;
+                canvas.height = parent.clientHeight;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctxRef.current = ctx;
+
+                if (currentData.length > 10) {
+                    const img = new Image();
+                    img.onload = () => ctx.drawImage(img, 0, 0);
+                    img.src = currentData;
+                }
+            }, [isLocked]);
+
+            useEffect(() => {
+                const timer = setTimeout(initCanvas, 100);
+                window.addEventListener('resize', initCanvas);
+                return () => {
+                    clearTimeout(timer);
+                    window.removeEventListener('resize', initCanvas);
+                };
+            }, [initCanvas, article]);
+
+            const getCoordinates = (e) => {
+                const canvas = canvasRef.current;
+                const rect = canvas.getBoundingClientRect();
+                let clientX, clientY;
+
+                if (e.touches && e.touches.length > 0) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            };
+
+            const startDrawing = (e) => {
+                if (isLocked) return;
+                e.preventDefault();
+                const { x, y } = getCoordinates(e);
+                const ctx = ctxRef.current;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                setIsDrawing(true);
+            };
+
+            const draw = (e) => {
+                if (!isDrawing || isLocked) return;
+                e.preventDefault();
+                const { x, y } = getCoordinates(e);
+                const ctx = ctxRef.current;
+                
+                if (activeTool === 'highlighter') {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = '#bbf7d0'; // 實心淺綠色
+                    ctx.lineWidth = 24;
+                } else if (activeTool === 'eraser') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.strokeStyle = 'rgba(0,0,0,1)';
+                    ctx.lineWidth = 36;
+                }
+                
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            };
+
+            const stopDrawing = () => {
+                if (!isDrawing) return;
+                ctxRef.current.closePath();
+                setIsDrawing(false);
+            };
+
+            const generateImage = async () => {
+                try {
+                    setIsGenerating(true);
+                    const h2c = await loadHtml2Canvas();
+                    document.activeElement?.blur();
+                    
+                    const canvas = await h2c(captureRef.current, {
+                        scale: 2,
+                        backgroundColor: '#fdfbf7',
+                        logging: false,
+                        useCORS: true
+                    });
+                    
+                    return canvas.toDataURL('image/png');
+                } catch (error) {
+                    alert('圖片產生失敗，請稍後再試。');
+                    return null;
+                } finally {
+                    setIsGenerating(false);
+                }
+            };
+
+            const handleDownload = async () => {
+                const dataUrl = lockedImageUrl || await generateImage();
+                if (!dataUrl) return;
+                
+                const link = document.createElement('a');
+                link.download = `${studentInfo.name || '未命名'}_${article.title}.png`;
+                link.href = dataUrl;
+                link.click();
+            };
+
+            const handleToggleLock = async (e) => {
+                const willLock = e.target.checked;
+                if (willLock) {
+                    const dataUrl = await generateImage();
+                    if (dataUrl) {
+                        setLockedImageUrl(dataUrl);
+                        setIsLocked(true);
+                    } else {
+                        e.target.checked = false;
+                    }
+                } else {
+                    setIsLocked(false);
+                    setLockedImageUrl(null);
+                    setTimeout(initCanvas, 100);
+                }
+            };
+
+            return (
+                <div className="flex flex-col max-w-6xl mx-auto p-4 gap-6">
+                    
+                    {/* 頂部操作列 */}
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+                            <label className={`flex items-center gap-3 px-4 py-2 rounded-lg border-2 cursor-pointer transition-colors ${isLocked ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-transparent hover:bg-gray-100'}`}>
+                                <input 
+                                    type="checkbox" 
+                                    className="w-5 h-5 text-green-600 rounded border-gray-300 focus:ring-green-500"
+                                    checked={isLocked}
+                                    onChange={handleToggleLock}
+                                    disabled={isGenerating}
+                                />
+                                <span className={`text-sm font-bold ${isLocked ? 'text-green-700' : 'text-gray-700'}`}>
+                                    {isGenerating ? '產生影像中...' : '鎖定並轉為圖片 (iPad長按儲存用)'}
+                                </span>
+                            </label>
+
+                            <button 
+                                onClick={handleDownload}
+                                disabled={isGenerating}
+                                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-lg font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+                            >
+                                <IconDownload size={18} />
+                                下載為圖片
+                            </button>
+                        </div>
+
+                        <button 
+                            onClick={onAdminClick} 
+                            className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors font-medium w-full md:w-auto"
+                            title="管理後台"
+                        >
+                            <IconSettings size={18} />
+                            管理後台登入
+                        </button>
+                    </div>
+
+                    {/* 行動版工具列 */}
+                    {!isLocked && (
+                        <div className="lg:hidden flex gap-2 bg-white p-2 rounded-xl shadow-sm border border-gray-200">
+                            <button 
+                                onClick={() => setActiveTool('highlighter')}
+                                className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg transition-all ${activeTool === 'highlighter' ? 'bg-green-100 text-green-600 ring-2 ring-green-400' : 'text-gray-500 hover:bg-gray-50'}`}
+                            >
+                                <IconPenTool size={20} /> 螢光筆
+                            </button>
+                            <div className="w-px bg-gray-200 my-1"></div>
+                            <button 
+                                onClick={() => setActiveTool('eraser')}
+                                className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg transition-all ${activeTool === 'eraser' ? 'bg-pink-100 text-pink-600 ring-2 ring-pink-400' : 'text-gray-500 hover:bg-gray-50'}`}
+                            >
+                                <IconEraser size={20} /> 橡皮擦
+                            </button>
+                        </div>
+                    )}
+
+                    {/* 畫布區 */}
+                    <div className="flex items-start gap-4">
+                        <div className="flex-1 relative w-full overflow-hidden">
+                            <div 
+                                ref={captureRef}
+                                className={`bg-[#fdfbf7] shadow-xl overflow-hidden transition-all duration-300 ${isLocked ? 'ring-4 ring-green-500 rounded-lg' : ''}`}
+                                style={{ 
+                                    backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.8\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100\' height=\'100\' filter=\'url(%23noise)\' opacity=\'0.05\'/%3E%3C/svg%3E")',
+                                }}
+                            >
+                                {isLocked && lockedImageUrl ? (
+                                    <img src={lockedImageUrl} alt="已鎖定的報紙" className="w-full h-auto block" />
+                                ) : (
+                                    <div className="relative p-8 md:p-12 font-serif text-gray-900 border-x-8 border-y-8 border-double border-gray-800 m-4 md:m-8">
+                                        <div className="text-center mb-8 border-b-2 border-gray-800 pb-6">
+                                            <h1 className="text-3xl md:text-5xl font-black mb-4 tracking-wider leading-tight">{article.title}</h1>
+                                            <div className="flex justify-between items-center text-gray-600 text-sm font-sans uppercase tracking-widest border-t border-b border-gray-400 py-2">
+                                                <span>{article.date}</span>
+                                                <span className="font-bold">每日焦點新聞</span>
+                                                <span>{article.author}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="relative">
+                                            <canvas
+                                                ref={canvasRef}
+                                                className="absolute top-0 left-0 w-full h-full z-10 touch-none"
+                                                style={{ cursor: getCursorStyle() }}
+                                                onMouseDown={startDrawing}
+                                                onMouseMove={draw}
+                                                onMouseUp={stopDrawing}
+                                                onMouseLeave={stopDrawing}
+                                                onTouchStart={startDrawing}
+                                                onTouchMove={draw}
+                                                onTouchEnd={stopDrawing}
+                                                onTouchCancel={stopDrawing}
+                                            />
+                                            <div className="columns-1 md:columns-2 gap-8 text-lg leading-loose tracking-wide text-justify whitespace-pre-wrap relative z-20 pointer-events-none text-gray-900">
+                                                {article.content}
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-16 pt-6 border-t-2 border-dashed border-gray-400 relative z-20 font-sans">
+                                            <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center gap-2">
+                                                <IconCheck size={20} className="text-green-600" />
+                                                閱讀任務完成確認：
+                                            </h3>
+                                            <div className="flex flex-col sm:flex-row gap-4">
+                                                <div className="flex-1">
+                                                    <label className="block text-sm font-medium text-gray-600 mb-1">班級</label>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="例：三年二班"
+                                                        className="w-full bg-transparent border-b-2 border-gray-400 focus:border-blue-500 outline-none px-2 py-1 transition-colors"
+                                                        value={studentInfo.classId}
+                                                        onChange={(e) => setStudentInfo({...studentInfo, classId: e.target.value})}
+                                                    />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <label className="block text-sm font-medium text-gray-600 mb-1">座號</label>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="例：05"
+                                                        className="w-full bg-transparent border-b-2 border-gray-400 focus:border-blue-500 outline-none px-2 py-1 transition-colors"
+                                                        value={studentInfo.seatNo}
+                                                        onChange={(e) => setStudentInfo({...studentInfo, seatNo: e.target.value})}
+                                                    />
+                                                </div>
+                                                <div className="flex-[2]">
+                                                    <label className="block text-sm font-medium text-gray-600 mb-1">姓名</label>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="請輸入姓名"
+                                                        className="w-full bg-transparent border-b-2 border-gray-400 focus:border-blue-500 outline-none px-2 py-1 transition-colors"
+                                                        value={studentInfo.name}
+                                                        onChange={(e) => setStudentInfo({...studentInfo, name: e.target.value})}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {isLocked && (
+                                <div className="mt-4 p-4 bg-green-50 text-green-800 rounded-lg flex items-center gap-3 animate-pulse border border-green-200">
+                                    <IconImageIcon className="text-green-600 flex-shrink-0" />
+                                    <p className="text-sm font-medium">系統已鎖定畫面。iPad 使用者現在可以直接長按上方報紙，選擇「儲存圖片」或「加入照片」。</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 右側懸浮工具列 */}
+                        {!isLocked && (
+                            <div className="sticky top-24 hidden lg:flex flex-col gap-3 bg-white p-2 rounded-2xl shadow-lg border border-gray-200 z-20 flex-shrink-0">
+                                <button 
+                                    onClick={() => setActiveTool('highlighter')}
+                                    className={`p-3 rounded-xl transition-all ${activeTool === 'highlighter' ? 'bg-green-100 text-green-600 shadow-inner ring-2 ring-green-400' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'}`}
+                                    title="螢光筆"
+                                >
+                                    <IconPenTool size={24} />
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTool('eraser')}
+                                    className={`p-3 rounded-xl transition-all ${activeTool === 'eraser' ? 'bg-pink-100 text-pink-600 shadow-inner ring-2 ring-pink-400' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'}`}
+                                    title="橡皮擦"
+                                >
+                                    <IconEraser size={24} />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ==========================================
+        // 管理者登入與後台組件
+        // ==========================================
+        function AdminLogin({ correctPassword, onSuccess, onCancel }) {
+            const [pwd, setPwd] = useState('');
+            const [error, setError] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (pwd === correctPassword) {
+                    onSuccess();
+                } else {
+                    setError('密碼錯誤，請重新輸入。預設為 admin888');
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
+                        <div className="flex items-center justify-center w-12 h-12 bg-blue-100 text-blue-600 rounded-full mb-6 mx-auto">
+                            <IconSettings size={24} />
+                        </div>
+                        <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">管理者後台登入</h2>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">系統密碼</label>
+                                <input 
+                                    type="password" 
+                                    value={pwd}
+                                    onChange={(e) => setPwd(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    placeholder="輸入密碼..."
+                                    autoFocus
+                                />
+                                {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+                            </div>
+                            <div className="flex gap-3 pt-4">
+                                <button type="button" onClick={onCancel} className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors">
+                                    返回首頁
+                                </button>
+                                <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+                                    登入
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        function AdminDashboard({ articles, setArticles, adminPassword, setAdminPassword, onLogout }) {
+            const [activeTab, setActiveTab] = useState('articles');
+            const [editingArticle, setEditingArticle] = useState(null);
+            const [newPassword, setNewPassword] = useState('');
+            const [pwdMsg, setPwdMsg] = useState('');
+
+            const handleSaveArticle = (e) => {
+                e.preventDefault();
+                if (editingArticle.id) {
+                    setArticles(articles.map(a => a.id === editingArticle.id ? editingArticle : a));
+                } else {
+                    setArticles([...articles, { ...editingArticle, id: Date.now() }]);
+                }
+                setEditingArticle(null);
+            };
+
+            const handleDelete = (id) => {
+                if (window.confirm('確定要刪除這篇文章嗎？')) {
+                    setArticles(articles.filter(a => a.id !== id));
+                }
+            };
+
+            const handleChangePassword = (e) => {
+                e.preventDefault();
+                if (newPassword.length < 4) {
+                    setPwdMsg('密碼長度至少需 4 碼');
+                    return;
+                }
+                setAdminPassword(newPassword);
+                setNewPassword('');
+                setPwdMsg('✅ 密碼修改成功！');
+                setTimeout(() => setPwdMsg(''), 3000);
+            };
+
+            return (
+                <div className="max-w-5xl mx-auto p-4 md:p-8">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                            <IconSettings className="text-blue-600" />
+                            系統管理後台
+                        </h1>
+                        <div className="flex gap-2 w-full md:w-auto">
+                            <button onClick={() => setActiveTab('articles')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'articles' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`}>文章管理</button>
+                            <button onClick={() => setActiveTab('settings')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`}>系統設定</button>
+                            <button onClick={onLogout} className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-medium transition-colors ml-auto">
+                                <IconLogOut size={18} /> 登出
+                            </button>
+                        </div>
+                    </div>
+
+                    {activeTab === 'articles' && !editingArticle && (
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                                <h2 className="font-bold text-gray-700">文章列表</h2>
+                                <button onClick={() => setEditingArticle({ title: '', author: '', date: new Date().toISOString().split('T')[0], content: '' })} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
+                                    <IconPlus size={16} /> 新增文章
+                                </button>
+                            </div>
+                            <div className="divide-y divide-gray-200">
+                                {articles.length === 0 ? (
+                                    <p className="p-8 text-center text-gray-500">目前沒有任何文章。</p>
+                                ) : (
+                                    articles.map(article => (
+                                        <div key={article.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-gray-50 transition-colors">
+                                            <div>
+                                                <h3 className="font-bold text-gray-800 text-lg mb-1">{article.title}</h3>
+                                                <p className="text-sm text-gray-500">{article.date} · {article.author}</p>
+                                            </div>
+                                            <div className="flex gap-2 w-full md:w-auto">
+                                                <button onClick={() => setEditingArticle(article)} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+                                                    <IconEdit2 size={16} /> 編輯
+                                                </button>
+                                                <button onClick={() => handleDelete(article.id)} className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium transition-colors">
+                                                    <IconTrash2 size={16} /> 刪除
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'articles' && editingArticle && (
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-xl font-bold text-gray-800">{editingArticle.id ? '編輯文章' : '新增文章'}</h2>
+                                <button onClick={() => setEditingArticle(null)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
+                                    <IconX size={20} />
+                                </button>
+                            </div>
+                            <form onSubmit={handleSaveArticle} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">文章標題</label>
+                                    <input required type="text" value={editingArticle.title} onChange={e => setEditingArticle({...editingArticle, title: e.target.value})} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                </div>
+                                <div className="flex flex-col md:flex-row gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">作者/來源</label>
+                                        <input required type="text" value={editingArticle.author} onChange={e => setEditingArticle({...editingArticle, author: e.target.value})} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">發布日期</label>
+                                        <input required type="date" value={editingArticle.date} onChange={e => setEditingArticle({...editingArticle, date: e.target.value})} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">文章內容 (支援換行)</label>
+                                    <textarea required rows={10} value={editingArticle.content} onChange={e => setEditingArticle({...editingArticle, content: e.target.value})} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-y" />
+                                </div>
+                                <div className="flex justify-end gap-3 pt-4">
+                                    <button type="button" onClick={() => setEditingArticle(null)} className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors">取消</button>
+                                    <button type="submit" className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+                                        <IconSave size={18} /> 儲存文章
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {activeTab === 'settings' && (
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 max-w-md">
+                            <h2 className="text-xl font-bold text-gray-800 mb-6 border-b pb-4">系統設定</h2>
+                            <form onSubmit={handleChangePassword} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">修改管理者密碼</label>
+                                    <input type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="輸入新密碼..." className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                </div>
+                                {pwdMsg && <p className={`text-sm ${pwdMsg.includes('✅') ? 'text-green-600' : 'text-red-500'}`}>{pwdMsg}</p>}
+                                <button type="submit" className="w-full py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg font-medium transition-colors">確認修改密碼</button>
+                            </form>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ==========================================
+        // 渲染 React 應用程式
+        // ==========================================
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
