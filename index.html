@@ -15,6 +15,21 @@
     <!-- 引入 Babel 用於在瀏覽器編譯 JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- 新增：引入 Firebase 雲端資料庫 ES Modules -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        // 將 Firebase 模組掛載到全域，供底下的 React 呼叫
+        window.FB = {
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged,
+            getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc
+        };
+        // 觸發事件通知 React 模組已準備完畢
+        window.dispatchEvent(new Event('firebase-ready'));
+    </script>
+
     <style>
         /* 確保全螢幕無卷軸干擾，並優化觸控體驗 */
         body { margin: 0; padding: 0; touch-action: manipulation; }
@@ -25,6 +40,20 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
+
+        // ==========================================
+        // 您的 Firebase 雲端設定參數
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDfXL6uPnaocWuEp56rOW8Hu5kICMx1roQ",
+            authDomain: "news-highlighter-3c445.firebaseapp.com",
+            projectId: "news-highlighter-3c445",
+            storageBucket: "news-highlighter-3c445.firebasestorage.app",
+            messagingSenderId: "692863065348",
+            appId: "1:692863065348:web:7d1ca3a0e9e63fec63c451",
+            measurementId: "G-XYGNLQ9R79"
+        };
+        const fireAppId = 'news-highlighter';
 
         // ==========================================
         // 內建 SVG 圖示元件 (取代 lucide-react)
@@ -80,13 +109,125 @@
         ];
 
         // ==========================================
-        // 主要系統組件 App
+        // 主要系統組件 App (雲端同步升級版)
         // ==========================================
         function App() {
-            const [view, setView] = useState('user'); // 'user', 'adminLogin', 'adminDashboard'
-            const [adminPassword, setAdminPassword] = useState('admin888');
-            const [articles, setArticles] = useState(initialArticles);
-            const [currentArticleId, setCurrentArticleId] = useState(1);
+            const [fbReady, setFbReady] = useState(false);
+            const [view, setView] = useState('user'); 
+            const [adminPassword, setAdminPassword] = useState('');
+            const [articles, setArticles] = useState([]);
+            const [currentArticleId, setCurrentArticleId] = useState(null);
+            const [user, setUser] = useState(null);
+            const [isLoading, setIsLoading] = useState(true);
+            const [authError, setAuthError] = useState(null);
+
+            // 1. 等待 Firebase SDK 載入完成
+            useEffect(() => {
+                if (window.FB) setFbReady(true);
+                else window.addEventListener('firebase-ready', () => setFbReady(true));
+            }, []);
+
+            // 2. 初始化 Firebase 與匿名登入
+            useEffect(() => {
+                if (!fbReady) return;
+
+                const app = window.FB.initializeApp(firebaseConfig);
+                const auth = window.FB.getAuth(app);
+                window.firebaseDb = window.FB.getFirestore(app);
+
+                const initAuth = async () => { 
+                    try {
+                        await window.FB.signInAnonymously(auth); 
+                    } catch (error) {
+                        console.error("Firebase 登入錯誤:", error);
+                        if (error.code === 'auth/configuration-not-found') {
+                            setAuthError('請前往 Firebase 控制台啟用「匿名登入」！');
+                        } else {
+                            setAuthError(error.message);
+                        }
+                        setIsLoading(false);
+                    }
+                };
+                initAuth();
+
+                const unsubAuth = window.FB.onAuthStateChanged(auth, (u) => setUser(u));
+                return () => unsubAuth();
+            }, [fbReady]);
+
+            // 3. 監聽雲端資料庫的變化
+            useEffect(() => {
+                if (!user || !window.firebaseDb) return;
+                const db = window.firebaseDb;
+
+                const articlesRef = window.FB.collection(db, 'artifacts', fireAppId, 'public', 'data', 'articles');
+                const settingsRef = window.FB.doc(db, 'artifacts', fireAppId, 'public', 'data', 'settings', 'config');
+
+                // 監聽密碼設定
+                const unsubSettings = window.FB.onSnapshot(settingsRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setAdminPassword(docSnap.data().adminPassword);
+                    } else {
+                        // 若第一次使用，寫入預設密碼 admin888
+                        window.FB.setDoc(settingsRef, { adminPassword: 'admin888' });
+                    }
+                }, (err) => console.error(err));
+
+                // 監聽文章內容
+                const unsubArticles = window.FB.onSnapshot(articlesRef, (snapshot) => {
+                    if (snapshot.empty && isLoading) {
+                        // 若資料庫全空，自動把第一篇預設文章灌進雲端
+                        initialArticles.forEach(a => {
+                            window.FB.setDoc(window.FB.doc(db, 'artifacts', fireAppId, 'public', 'data', 'articles', a.id.toString()), a);
+                        });
+                    } else {
+                        const data = snapshot.docs.map(doc => ({ id: Number(doc.id), ...doc.data() }));
+                        data.sort((a, b) => b.id - a.id); // 排序：最新新增的文章在最上面
+                        setArticles(data);
+                    }
+                    setIsLoading(false);
+                }, (err) => {
+                    console.error("雲端存取錯誤，請確認已設定好 Firestore 安全規則！", err);
+                    setIsLoading(false);
+                });
+
+                return () => { unsubSettings(); unsubArticles(); };
+            }, [user]);
+
+            // 自動選擇第一篇文章
+            useEffect(() => {
+                if (articles.length > 0 && !currentArticleId) {
+                    setCurrentArticleId(articles[0].id);
+                }
+            }, [articles, currentArticleId]);
+
+            // 錯誤處理畫面 (針對 auth/configuration-not-found)
+            if (authError) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4 gap-4 font-sans">
+                        <div className="bg-white border-t-4 border-red-500 p-8 rounded-2xl shadow-xl max-w-2xl w-full">
+                            <h3 className="text-2xl font-bold text-red-600 mb-4 flex items-center gap-2">⚠️ Firebase 尚未啟用「匿名登入」</h3>
+                            <p className="text-gray-700 mb-6 text-lg">系統偵測到登入失敗，因為您的 Firebase 專案目前尚未允許使用者進入。請依照以下簡單步驟完成解鎖：</p>
+                            <ol className="list-decimal list-inside space-y-3 text-gray-700 bg-red-50 p-6 rounded-xl font-medium">
+                                <li>回到 <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 underline hover:text-blue-800">Firebase 控制台</a> 的專案頁面。</li>
+                                <li>點擊左側選單的 <strong>建構 (Build) ➔ Authentication (驗證)</strong>。</li>
+                                <li>點擊畫面上的 <strong>開始使用 (Get Started)</strong> 按鈕。</li>
+                                <li>選擇上方頁籤的 <strong>Sign-in method (登入方式)</strong>。</li>
+                                <li>在供應商清單中找到並點擊 <strong>匿名 (Anonymous)</strong>。</li>
+                                <li>將右上角的開關切換至 <strong>啟用 (Enable)</strong>，然後按下儲存。</li>
+                                <li>完成後，重新整理這個網頁即可開始正常運作！</li>
+                            </ol>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 載入畫面
+            if (!fbReady || isLoading) {
+                return <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 gap-4">
+                    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-gray-600 font-medium tracking-wider">連線至雲端資料庫中...</span>
+                </div>;
+            }
 
             const currentArticle = articles.find(a => a.id === currentArticleId) || articles[0];
 
@@ -94,7 +235,7 @@
                 <div className="min-h-screen bg-gray-100 text-gray-900 font-sans selection:bg-yellow-200">
                     {view === 'user' && (
                         <UserView 
-                            article={currentArticle} 
+                            article={currentArticle || { title: '尚無文章', content: '請由管理後台新增文章' }} 
                             articles={articles}
                             onSwitchArticle={setCurrentArticleId}
                             onAdminClick={() => setView('adminLogin')} 
@@ -262,7 +403,7 @@
                     
                     return canvas.toDataURL('image/png');
                 } catch (error) {
-                    alert('圖片產生失敗，請稍後再試。');
+                    console.error('圖片產生失敗', error);
                     return null;
                 } finally {
                     setIsGenerating(false);
@@ -270,9 +411,21 @@
             };
 
             const handleDownload = async () => {
+                const isEmbedded = window.self !== window.top; // 聰明偵測：是否在 Genially 等 iframe 內嵌模式中
+                
                 const dataUrl = lockedImageUrl || await generateImage();
                 if (!dataUrl) return;
+
+                if (isEmbedded) {
+                    // 若在內嵌環境，阻擋點擊下載，改為強制鎖定為圖片
+                    if (!isLocked) {
+                        setLockedImageUrl(dataUrl);
+                        setIsLocked(true);
+                    }
+                    return; // 中斷程式，讓使用者改用右鍵/長按儲存，繞過 Genially 限制
+                }
                 
+                // 正常網頁模式的下載邏輯
                 const link = document.createElement('a');
                 link.download = `${studentInfo.name || '未命名'}_${article.title}.png`;
                 link.href = dataUrl;
@@ -311,17 +464,17 @@
                                     disabled={isGenerating}
                                 />
                                 <span className={`text-sm font-bold ${isLocked ? 'text-green-700' : 'text-gray-700'}`}>
-                                    {isGenerating ? '產生影像中...' : '鎖定並轉為圖片 (iPad長按儲存用)'}
+                                    {isGenerating ? '產生影像中...' : '鎖定轉圖片 (防跑版/內嵌專用)'}
                                 </span>
                             </label>
 
                             <button 
                                 onClick={handleDownload}
-                                disabled={isGenerating}
-                                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-lg font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+                                disabled={isGenerating || isLocked}
+                                className={`flex items-center justify-center gap-2 py-2.5 px-6 rounded-lg font-medium transition-colors whitespace-nowrap disabled:opacity-50 ${isLocked ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
                             >
                                 <IconDownload size={18} />
-                                下載為圖片
+                                {isLocked ? '已轉圖片，請右鍵儲存' : '下載為圖片'}
                             </button>
                         </div>
 
@@ -441,7 +594,7 @@
                             {isLocked && (
                                 <div className="mt-4 p-4 bg-green-50 text-green-800 rounded-lg flex items-center gap-3 animate-pulse border border-green-200">
                                     <IconImageIcon className="text-green-600 flex-shrink-0" />
-                                    <p className="text-sm font-medium">系統已鎖定畫面。iPad 使用者現在可以直接長按上方報紙，選擇「儲存圖片」或「加入照片」。</p>
+                                    <p className="text-sm font-medium">系統已轉為純圖片模式。請直接對著上方報紙 <strong>【按滑鼠右鍵 ➔ 另存圖片】</strong> 或 <strong>【平板長按 ➔ 儲存照片】</strong> 來下載您的作業。</p>
                                 </div>
                             )}
                         </div>
@@ -471,7 +624,7 @@
         }
 
         // ==========================================
-        // 管理者登入與後台組件
+        // 管理者登入與後台組件 (改寫為寫入雲端)
         // ==========================================
         function AdminLogin({ correctPassword, onSuccess, onCancel }) {
             const [pwd, setPwd] = useState('');
@@ -526,31 +679,36 @@
             const [newPassword, setNewPassword] = useState('');
             const [pwdMsg, setPwdMsg] = useState('');
 
-            const handleSaveArticle = (e) => {
+            const handleSaveArticle = async (e) => {
                 e.preventDefault();
-                if (editingArticle.id) {
-                    setArticles(articles.map(a => a.id === editingArticle.id ? editingArticle : a));
-                } else {
-                    setArticles([...articles, { ...editingArticle, id: Date.now() }]);
-                }
+                const db = window.firebaseDb;
+                const articleToSave = editingArticle.id ? editingArticle : { ...editingArticle, id: Date.now() };
+                const docRef = window.FB.doc(db, 'artifacts', fireAppId, 'public', 'data', 'articles', articleToSave.id.toString());
+                
+                await window.FB.setDoc(docRef, articleToSave); // 寫入雲端
                 setEditingArticle(null);
             };
 
-            const handleDelete = (id) => {
-                if (window.confirm('確定要刪除這篇文章嗎？')) {
-                    setArticles(articles.filter(a => a.id !== id));
+            const handleDelete = async (id) => {
+                if (window.confirm('確定要從雲端刪除這篇文章嗎？此動作無法復原。')) {
+                    const db = window.firebaseDb;
+                    const docRef = window.FB.doc(db, 'artifacts', fireAppId, 'public', 'data', 'articles', id.toString());
+                    await window.FB.deleteDoc(docRef); // 從雲端刪除
                 }
             };
 
-            const handleChangePassword = (e) => {
+            const handleChangePassword = async (e) => {
                 e.preventDefault();
                 if (newPassword.length < 4) {
                     setPwdMsg('密碼長度至少需 4 碼');
                     return;
                 }
-                setAdminPassword(newPassword);
+                const db = window.firebaseDb;
+                const settingsRef = window.FB.doc(db, 'artifacts', fireAppId, 'public', 'data', 'settings', 'config');
+                await window.FB.setDoc(settingsRef, { adminPassword: newPassword }, { merge: true }); // 更新雲端密碼
+                
                 setNewPassword('');
-                setPwdMsg('✅ 密碼修改成功！');
+                setPwdMsg('✅ 密碼修改成功！(已同步至雲端)');
                 setTimeout(() => setPwdMsg(''), 3000);
             };
 
