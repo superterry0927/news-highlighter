@@ -435,11 +435,16 @@ service cloud.firestore {
             const generateImage = async () => {
                 try {
                     setIsGenerating(true);
+                    
+                    // 關鍵修復 1：強制讓出 100 毫秒給瀏覽器，讓 iPad 能順利完成「打勾」與「轉圈」的 UI 動畫，避免觸控死機
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
                     const h2c = await loadHtml2Canvas();
                     document.activeElement?.blur();
                     
                     const canvas = await h2c(captureRef.current, {
-                        scale: 2,
+                        // 關鍵修復 2：iPad 等高解析度螢幕(Retina)必須降回原始倍率，否則記憶體會爆表導致閃退
+                        scale: window.devicePixelRatio > 1 ? 1 : 2,
                         backgroundColor: '#fdfbf7',
                         logging: false,
                         useCORS: true
@@ -448,6 +453,8 @@ service cloud.firestore {
                     return canvas.toDataURL('image/png');
                 } catch (error) {
                     console.error('圖片產生失敗', error);
+                    // 關鍵修復 3：加入失敗提示，不要再讓系統默默沒反應
+                    alert('圖片產生失敗。若您使用 iPad，請嘗試重新整理網頁，或關閉多餘的分頁以釋放記憶體。\\n錯誤細節：' + error.message);
                     return null;
                 } finally {
                     setIsGenerating(false);
@@ -483,9 +490,8 @@ service cloud.firestore {
                     if (dataUrl) {
                         setLockedImageUrl(dataUrl);
                         setIsLocked(true);
-                    } else {
-                        e.target.checked = false;
                     }
+                    // 移除了強制取消打勾的舊邏輯，若生成失敗，交由 React 的 isLocked 狀態自然回彈為空
                 } else {
                     setIsLocked(false);
                     setLockedImageUrl(null);
@@ -557,9 +563,7 @@ service cloud.firestore {
                             <div 
                                 ref={captureRef}
                                 className={`bg-[#fdfbf7] shadow-xl overflow-hidden transition-all duration-300 ${isLocked ? 'ring-4 ring-green-500 rounded-lg' : ''}`}
-                                style={{ 
-                                    backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.8\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100\' height=\'100\' filter=\'url(%23noise)\' opacity=\'0.05\'/%3E%3C/svg%3E")',
-                                }}
+                                // 關鍵修復 4：完全移除 style 的 SVG 雜訊背景，這是 iOS Safari 截圖當機的最大元兇
                             >
                                 {isLocked && lockedImageUrl ? (
                                     <img src={lockedImageUrl} alt="已鎖定的報紙" className="w-full h-auto block" />
